@@ -161,7 +161,7 @@
   .day-card.today { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
   .day-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
   .day-n { font-size: 18px; font-weight: 740; letter-spacing: -0.01em; }
-  .day-date { margin-left: 8px; font-size: 14px; color: var(--muted); }
+  .day-range { margin: 2px 0 0; font-size: 13px; color: var(--muted); }
   .pill {
     padding: 3px 10px; border-radius: 99px; font-size: 12px; font-weight: 680; white-space: nowrap;
     background: var(--accent-soft); color: var(--accent);
@@ -291,8 +291,8 @@
   <section id="panel-days" role="tabpanel" aria-labelledby="tab-days" hidden>
     <div class="card summary">
       <div class="summary-row">
-        <span><strong class="num" id="sumDays">–</strong> days</span>
-        <span><strong class="num" id="sumFull">–</strong> full days</span>
+        <span><strong class="num" id="sumDays">–</strong> <span id="sumDaysLbl">days</span></span>
+        <span><strong class="num" id="sumFull">–</strong> <span id="sumFullLbl">full days</span></span>
         <span><strong class="num" id="sumCravings">–</strong> cravings beaten</span>
       </div>
       <div class="chain" id="chain" aria-hidden="true"></div>
@@ -344,15 +344,18 @@
 (() => {
   'use strict';
 
+  // A "day" is a 24-hour period counted from the last cigarette:
+  // Day 1 = quit → quit+24h, Day 2 = quit+24h → quit+48h, ...
   const KEY = 'smokefree-tracker:v1';
   const TAB_KEY = 'smokefree-tracker:tab';
   const DEFAULTS = {
-    quit: '2026-11-07T23:00', // local time of the last cigarette
+    quit: '2026-11-06T23:00', // local time of the last cigarette
     cigsPerDay: 20,
     packSize: 20,
     packPrice: 8.5,
     currency: 'EUR',
-    log: {} // 'YYYY-MM-DD' -> { cravings: number, note: string }
+    cravings: [], // timestamps (ms) of cravings beaten
+    notes: []     // { at: ms, text } — a note belongs to the day that contains `at`
   };
 
   const MIN = 6e4, HOUR = 36e5, DAY = 864e5, YEAR = 365.25 * DAY;
@@ -370,22 +373,6 @@
   ];
   const CHECK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 
-  // ---------- storage ----------
-  function load() {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
-        const s = JSON.parse(raw);
-        return { ...DEFAULTS, ...s, log: s && typeof s.log === 'object' && s.log ? s.log : {} };
-      }
-    } catch (e) { /* storage unavailable */ }
-    return { ...DEFAULTS, log: {} };
-  }
-  function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
-  }
-  let state = load();
-
   // ---------- helpers ----------
   const $ = (s) => document.querySelector(s);
   const pad = (n) => String(n).padStart(2, '0');
@@ -396,13 +383,10 @@
   };
   const toLocalInput = (d) =>
     `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-  const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
-  const dayKey = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const calDays = (a, b) => Math.round((startOfDay(b) - startOfDay(a)) / DAY); // DST-safe
 
   const fmtDate = new Intl.DateTimeFormat(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
   const fmtTime = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' });
+  const fmtStamp = new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
   const fmtInt = new Intl.NumberFormat();
   let moneyFmt = null, moneyCur = null;
   function money(v) {
@@ -420,7 +404,7 @@
     const d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
     return (d ? `${d}d ${pad(h)}h ` : `${h}h `) + `${pad(m)}m ${pad(x)}s`;
   }
-  // "13h 49m" (for durations within a day)
+  // "13h 49m"
   function hm(ms) {
     const m = Math.max(0, Math.floor(ms / MIN));
     const h = Math.floor(m / 60);
@@ -437,15 +421,53 @@
     return `${Math.floor(ms / YEAR)} years`;
   }
 
-  const getQuit = () => parseLocal(state.quit);
-  const entry = (key) => (state.log[key] ||= { cravings: 0, note: '' });
-  const cravingsOn = (key) => (state.log[key] && state.log[key].cravings) | 0;
-  function totalCravings(quit) {
-    const from = dayKey(quit);
-    let n = 0;
-    for (const k in state.log) if (k >= from) n += cravingsOn(k);
-    return n;
+  // ---------- storage ----------
+  function load() {
+    let s = null;
+    try { const raw = localStorage.getItem(KEY); if (raw) s = JSON.parse(raw); } catch (e) { /* unavailable */ }
+    if (!s || typeof s !== 'object') return { ...DEFAULTS, cravings: [], notes: [] };
+    const st = { ...DEFAULTS, ...s };
+    st.cravings = Array.isArray(s.cravings) ? s.cravings.filter(Number.isFinite) : [];
+    st.notes = Array.isArray(s.notes) ? s.notes.filter((n) => n && Number.isFinite(n.at) && typeof n.text === 'string') : [];
+    // Migrate the old calendar-day log ({ 'YYYY-MM-DD': { cravings, note } }).
+    if (s.log && typeof s.log === 'object') {
+      const quit = parseLocal(st.quit).getTime(), now = Date.now();
+      for (const [k, e] of Object.entries(s.log)) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(k);
+        if (!m || !e) continue;
+        let at = new Date(+m[1], +m[2] - 1, +m[3], 12).getTime();
+        if (Number.isFinite(quit)) at = Math.max(at, quit + MIN);
+        at = Math.min(at, now);
+        for (let i = 0; i < (e.cravings | 0); i++) st.cravings.push(at);
+        if (e.note) st.notes.push({ at, text: String(e.note) });
+      }
+      delete st.log;
+      migrated = true;
+    }
+    return st;
   }
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  }
+  let migrated = false;
+  let state = load();
+  if (migrated) save();
+
+  // ---------- 24h-day model ----------
+  const getQuit = () => parseLocal(state.quit);
+  const dayAt = (quit, t) => Math.floor((t - quit) / DAY) + 1;           // 1-based
+  const period = (quit, i) => {
+    const start = quit.getTime() + (i - 1) * DAY;
+    return { start, end: start + DAY };
+  };
+  const inPeriod = (t, p) => t >= p.start && t < p.end;
+  const anchor = (p, now) => Math.min(p.start + DAY / 2, now);           // timestamp used for edits on a day
+  const cravingsIn = (p) => state.cravings.reduce((n, t) => n + (inPeriod(t, p) ? 1 : 0), 0);
+  const totalCravings = (quit) => state.cravings.reduce((n, t) => n + (t >= quit.getTime() ? 1 : 0), 0);
+  const noteIn = (p) => {
+    for (let i = state.notes.length - 1; i >= 0; i--) if (inPeriod(state.notes[i].at, p)) return state.notes[i];
+    return null;
+  };
 
   let toastTimer;
   function toast(msg) {
@@ -485,15 +507,14 @@
     }
   }
 
-  function renderTotals(now, quit, elapsed) {
+  function renderTotals(now, quit, elapsed, n) {
     const avoided = state.cigsPerDay * elapsed / DAY;
     $('#statCigs').textContent = fmtInt.format(Math.floor(avoided));
     $('#statCigsSub').textContent = `at ${state.cigsPerDay} a day`;
     $('#statMoney').textContent = money(avoided * state.packPrice / state.packSize);
     $('#statMoneySub').textContent = `${money(state.packPrice)} per ${state.packSize}`;
-    const total = totalCravings(quit);
-    $('#statCravings').textContent = fmtInt.format(total);
-    $('#statCravingsSub').textContent = `${cravingsOn(dayKey(now))} today`;
+    $('#statCravings').textContent = fmtInt.format(totalCravings(quit));
+    $('#statCravingsSub').textContent = `${cravingsIn(period(quit, n))} on day ${n}`;
 
     const next = MILESTONES.find((m) => elapsed < m.t);
     $('#statNext').textContent = next ? until(next.t - elapsed) : 'All done';
@@ -504,7 +525,7 @@
   // ---------- each-day view ----------
   let renderedDayN = null;
   function renderDays() {
-    const now = new Date(), quit = getQuit();
+    const now = Date.now(), quit = getQuit();
     const list = $('#days'), chain = $('#chain');
     if (isNaN(quit) || now < quit) {
       list.innerHTML = '<li class="card empty">Day 1 starts at your quit time.</li>';
@@ -515,45 +536,32 @@
       renderedDayN = 0;
       return;
     }
-    const n = calDays(quit, now) + 1;
-    const base = startOfDay(quit);
+    const n = dayAt(quit, now);
     const cards = [], dots = [];
-    let full = 0;
 
     for (let i = 1; i <= n; i++) {
-      const date = addDays(base, i - 1), next = addDays(base, i);
-      const from = i === 1 ? quit : date;
-      const to = i === n ? now : next;
-      const frac = Math.min(1, Math.max(0, (to - from) / (next - date)));
-      const isToday = i === n, isFirst = i === 1;
-      if (!isToday && !isFirst) full++;
-      const key = dayKey(date);
-      const e = state.log[key] || {};
+      const p = period(quit, i);
+      const isToday = i === n;
+      const frac = isToday ? (now - p.start) / DAY : 1;
+      const note = noteIn(p);
       dots.push(`<i class="${isToday ? 'today' : ''}" style="--f:${frac.toFixed(3)}" title="Day ${i}"></i>`);
 
-      let meta, pill;
-      if (isToday) {
-        meta = `<strong data-live>${hm(to - from)}</strong> smoke-free so far` + (isFirst ? ` · since ${fmtTime.format(quit)}` : '');
-        pill = 'Today';
-      } else if (isFirst) {
-        meta = `<strong>${hm(to - from)}</strong> smoke-free · quit at ${fmtTime.format(quit)}`;
-        pill = 'Start';
-      } else {
-        meta = '<strong>Full day</strong> smoke-free';
-        pill = '24h ✓';
-      }
+      const meta = isToday
+        ? `<strong data-live>${hm(now - p.start)}</strong> of 24h · <span data-next>Day ${i + 1} in ${until(p.end - now)}</span>`
+        : '<strong>24h</strong> smoke-free';
 
       cards.push(
-        `<li class="card day-card${isToday ? ' today' : ''}" data-key="${key}"${isToday ? ' data-today' : ''}>` +
-          `<div class="day-head"><div><span class="day-n">Day ${i}</span><span class="day-date">${fmtDate.format(date)}</span></div>` +
-          `<span class="pill">${pill}</span></div>` +
+        `<li class="card day-card${isToday ? ' today' : ''}" data-day="${i}"${isToday ? ' data-today' : ''}>` +
+          `<div class="day-head"><span class="day-n">Day ${i}</span>` +
+          `<span class="pill">${isToday ? 'Now' : 'Done ✓'}</span></div>` +
+          `<p class="day-range">${fmtStamp.format(p.start)} → ${fmtStamp.format(p.end)}</p>` +
           `<div class="bar"><span style="width:${(frac * 100).toFixed(1)}%"></span></div>` +
           `<p class="day-meta">${meta}</p>` +
           `<div class="day-row"><span>Cravings beaten</span>` +
             `<div class="stepper"><button type="button" data-act="-1" aria-label="One less craving on day ${i}">−</button>` +
-            `<output class="num">${(e.cravings | 0)}</output>` +
+            `<output class="num">${cravingsIn(p)}</output>` +
             `<button type="button" data-act="1" aria-label="One more craving on day ${i}">+</button></div></div>` +
-          `<textarea rows="2" placeholder="Notes — how did day ${i} go?" aria-label="Notes for day ${i}">${esc(e.note || '')}</textarea>` +
+          `<textarea rows="2" placeholder="Notes — how did day ${i} go?" aria-label="Notes for day ${i}">${esc(note ? note.text : '')}</textarea>` +
         `</li>`
       );
     }
@@ -561,41 +569,43 @@
     list.innerHTML = cards.reverse().join('');
     chain.innerHTML = dots.join('');
     $('#sumDays').textContent = fmtInt.format(n);
-    $('#sumFull').textContent = fmtInt.format(full);
+    $('#sumDaysLbl').textContent = n === 1 ? 'day' : 'days';
+    $('#sumFull').textContent = fmtInt.format(n - 1);
+    $('#sumFullLbl').textContent = n - 1 === 1 ? 'full day' : 'full days';
     $('#sumCravings').textContent = fmtInt.format(totalCravings(quit));
     renderedDayN = n;
   }
 
-  function updateToday(now, quit) {
+  function updateToday(now, quit, n) {
     const card = $('#days [data-today]');
     if (!card) return;
-    const date = startOfDay(now), next = addDays(date, 1);
-    const from = quit > date ? quit : date;
-    const frac = Math.min(1, (now - from) / (next - date));
+    const p = period(quit, n);
+    const frac = (now - p.start) / DAY;
     card.querySelector('.bar > span').style.width = `${(frac * 100).toFixed(1)}%`;
-    const live = card.querySelector('[data-live]');
-    if (live) live.textContent = hm(now - from);
+    card.querySelector('[data-live]').textContent = hm(now - p.start);
+    card.querySelector('[data-next]').textContent = `Day ${n + 1} in ${until(p.end - now)}`;
     const dot = $('#chain i.today');
     if (dot) dot.style.setProperty('--f', frac.toFixed(3));
   }
 
   // ---------- main loop ----------
   function tick() {
-    const now = new Date(), quit = getQuit();
+    const now = Date.now(), quit = getQuit();
     const valid = !isNaN(quit);
-    const elapsed = valid ? Math.max(0, now - quit) : 0;
-    const n = valid && now >= quit ? calDays(quit, now) + 1 : 0;
+    const started = valid && now >= quit;
+    const elapsed = started ? now - quit : 0;
+    const n = started ? dayAt(quit, now) : 0;
 
     $('#dayNum').textContent = fmtInt.format(n);
     $('#elapsed').textContent = clock(elapsed);
     $('#since').textContent = !valid ? 'Set your quit time in settings'
-      : now < quit ? `starts ${fmtDate.format(quit)} · ${fmtTime.format(quit)}`
+      : !started ? `starts ${fmtDate.format(quit)} · ${fmtTime.format(quit)}`
       : `smoke-free since ${fmtDate.format(quit)} · ${fmtTime.format(quit)}`;
-    $('#cravingBtn').disabled = !valid || now < quit;
+    $('#cravingBtn').disabled = !started;
 
-    if (valid) renderTotals(now, quit, elapsed);
+    if (started) renderTotals(now, quit, elapsed, n);
     if (n !== renderedDayN) renderDays();
-    else if (valid) updateToday(now, quit);
+    else if (started) updateToday(now, quit, n);
   }
 
   function rerenderAll() {
@@ -620,32 +630,42 @@
     if (b) showTab(b.dataset.tab);
   });
 
-  // ---------- cravings ----------
+  // ---------- cravings & notes ----------
   $('#cravingBtn').addEventListener('click', () => {
-    const now = new Date(), key = dayKey(now);
-    const e = entry(key);
-    e.cravings = (e.cravings | 0) + 1;
+    const now = Date.now(), quit = getQuit();
+    state.cravings.push(now);
     save();
     rerenderAll();
-    toast(e.cravings === 1 ? 'Craving beaten. That’s 1 today — nice.' : `Craving beaten. ${e.cravings} today — keep going.`);
+    const n = dayAt(quit, now), c = cravingsIn(period(quit, n));
+    toast(c === 1 ? `Craving beaten. First one on day ${n} — nice.` : `Craving beaten. ${c} on day ${n} — keep going.`);
   });
 
   let noteTimer;
   $('#days').addEventListener('click', (ev) => {
     const b = ev.target.closest('[data-act]');
     if (!b) return;
-    const card = b.closest('[data-key]');
-    const e = entry(card.dataset.key);
-    e.cravings = Math.max(0, (e.cravings | 0) + Number(b.dataset.act));
-    card.querySelector('output').textContent = e.cravings;
+    const card = b.closest('[data-day]');
+    const now = Date.now(), quit = getQuit();
+    const p = period(quit, +card.dataset.day);
+    if (b.dataset.act === '1') {
+      state.cravings.push(card.hasAttribute('data-today') ? now : anchor(p, now));
+    } else {
+      let idx = -1;
+      state.cravings.forEach((t, i) => { if (inPeriod(t, p) && (idx < 0 || t >= state.cravings[idx])) idx = i; });
+      if (idx >= 0) state.cravings.splice(idx, 1);
+    }
+    card.querySelector('output').textContent = cravingsIn(p);
     save();
-    const now = new Date(), quit = getQuit();
     $('#sumCravings').textContent = fmtInt.format(totalCravings(quit));
-    renderTotals(now, quit, Math.max(0, now - quit));
+    renderTotals(now, quit, now - quit, dayAt(quit, now));
   });
   $('#days').addEventListener('input', (ev) => {
     if (ev.target.tagName !== 'TEXTAREA') return;
-    entry(ev.target.closest('[data-key]').dataset.key).note = ev.target.value;
+    const now = Date.now(), quit = getQuit();
+    const p = period(quit, +ev.target.closest('[data-day]').dataset.day);
+    const note = noteIn(p);
+    if (note) note.text = ev.target.value;
+    else state.notes.push({ at: anchor(p, now), text: ev.target.value });
     clearTimeout(noteTimer);
     noteTimer = setTimeout(save, 300);
   });

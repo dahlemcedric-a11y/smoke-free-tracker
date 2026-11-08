@@ -7,7 +7,7 @@ A single-file, no-build web app to track a smoke-free streak. Open `index.html` 
 - **Each day** – one card per calendar day since quitting (Day 1 = quit day): smoke-free time that day, a craving counter, and notes. A chain of squares shows every day at a glance.
 
 ## Settings (top-right button)
-- Last cigarette date/time (default: 7 Nov 2026, 18:11)
+- Last cigarette date/time (default: 7 Nov 2026, 23:00)
 - Cigarettes per day, per pack, pack price, currency (defaults: 20/day, €8.50 per 20)
 - "I smoked — restart from now" resets the streak; notes are kept.
 

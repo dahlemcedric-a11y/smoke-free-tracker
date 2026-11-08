@@ -88,7 +88,7 @@
 
   /* Tabs */
   .tabs {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
     padding: 4px; margin: 16px 0;
     background: var(--surface-2); border-radius: 14px;
   }
@@ -183,6 +183,23 @@
   .day-card textarea::placeholder { color: var(--muted); }
   .empty { padding: 20px; text-align: center; color: var(--muted); }
 
+  /* Now view */
+  .kpi .value { color: var(--accent); font-size: 30px; }
+  .kpi .bar { margin: 8px 0; }
+  .kpi .sub + .sub { margin-top: 1px; }
+  .phases { padding: 16px; }
+  .phase-track { display: flex; gap: 5px; }
+  .phase-track .seg { flex: 1; height: 10px; border-radius: 99px; background: var(--track); overflow: hidden; }
+  .phase-track .seg > span { display: block; height: 100%; background: var(--accent); }
+  .phase-track .seg.current { box-shadow: 0 0 0 2px var(--surface), 0 0 0 3.5px var(--accent); }
+  .phase-scale { display: flex; justify-content: space-between; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .phase-list { list-style: none; margin: 10px 0 0; padding: 0; }
+  .phase-list li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 10px 0 0; margin-top: 10px; border-top: 1px solid var(--line); font-size: 14px; }
+  .phase-list .name { font-weight: 650; }
+  .phase-list .time, .phase-list .state { margin-left: 6px; font-size: 13px; color: var(--muted); }
+  .phase-list .pct { font-weight: 720; }
+  .phase-list li.current .pct, .phase-list li.current .name { color: var(--accent); }
+
   .foot { margin: 28px 0 0; text-align: center; font-size: 12px; color: var(--muted); }
 
   /* Settings dialog */
@@ -251,12 +268,56 @@
   </section>
 
   <nav class="tabs" role="tablist" aria-label="View">
-    <button type="button" role="tab" id="tab-total" aria-controls="panel-total" aria-selected="true" data-tab="total">Total</button>
+    <button type="button" role="tab" id="tab-now" aria-controls="panel-now" aria-selected="true" data-tab="now">Now</button>
+    <button type="button" role="tab" id="tab-total" aria-controls="panel-total" aria-selected="false" data-tab="total">Total</button>
     <button type="button" role="tab" id="tab-days" aria-controls="panel-days" aria-selected="false" data-tab="days">Each day</button>
   </nav>
 
+  <!-- NOW VIEW -->
+  <section id="panel-now" role="tabpanel" aria-labelledby="tab-now">
+    <div class="stats">
+      <div class="card stat kpi">
+        <span class="label">Current phase</span>
+        <span class="value num" id="kPhase">–</span>
+        <div class="bar"><span id="kPhaseBar"></span></div>
+        <span class="sub" id="kPhaseSub"></span>
+        <span class="sub" id="kPhaseFoot"></span>
+      </div>
+      <div class="card stat kpi">
+        <span class="label">Whole day</span>
+        <span class="value num" id="kDay">–</span>
+        <div class="bar"><span id="kDayBar"></span></div>
+        <span class="sub" id="kDaySub"></span>
+        <span class="sub" id="kDayFoot"></span>
+      </div>
+      <div class="card stat kpi">
+        <span class="label">3-day goal</span>
+        <span class="value num" id="k3">–</span>
+        <div class="bar"><span id="k3Bar"></span></div>
+        <span class="sub" id="k3Sub"></span>
+        <span class="sub" id="k3Foot"></span>
+      </div>
+      <div class="card stat kpi">
+        <span class="label">7-day goal</span>
+        <span class="value num" id="k7">–</span>
+        <div class="bar"><span id="k7Bar"></span></div>
+        <span class="sub" id="k7Sub"></span>
+        <span class="sub" id="k7Foot"></span>
+      </div>
+    </div>
+
+    <button class="primary-btn" data-craving type="button">I beat a craving</button>
+
+    <h2>Today's phases</h2>
+    <div class="card phases">
+      <div class="phase-track" id="phaseTrack"></div>
+      <div class="phase-scale" aria-hidden="true"><span>07:00</span><span>12:00</span><span>17:00</span><span>22:00</span></div>
+      <ul class="phase-list" id="phaseList"></ul>
+    </div>
+  </section>
+
   <!-- TOTAL VIEW -->
-  <section id="panel-total" role="tabpanel" aria-labelledby="tab-total">
+  <section id="panel-total" role="tabpanel" aria-labelledby="tab-total" hidden>
     <div class="stats">
       <div class="card stat">
         <span class="label">Cigarettes not smoked</span>
@@ -280,7 +341,7 @@
       </div>
     </div>
 
-    <button class="primary-btn" id="cravingBtn" type="button">I beat a craving</button>
+    <button class="primary-btn" data-craving type="button">I beat a craving</button>
 
     <h2>Health milestones</h2>
     <ol class="list" id="milestones"></ol>
@@ -416,6 +477,7 @@
     if (m < 60) return `${m}m`;
     if (m < 48 * 60) return `${Math.floor(m / 60)}h ${m % 60}m`;
     const d = Math.floor(ms / DAY);
+    if (d < 7) return `${d}d ${Math.floor((ms % DAY) / HOUR)}h`;
     if (d < 60) return `${d} days`;
     if (ms < 2 * YEAR) return `${Math.floor(ms / (YEAR / 12))} months`;
     return `${Math.floor(ms / YEAR)} years`;
@@ -588,6 +650,79 @@
     if (dot) dot.style.setProperty('--f', frac.toFixed(3));
   }
 
+  // ---------- now view ----------
+  // Waking day split into three phases (local clock time). Outside them (22:00–07:00) = night.
+  const PHASES = [
+    { name: 'Morning',   from: 7,  to: 12 },
+    { name: 'Afternoon', from: 12, to: 17 },
+    { name: 'Evening',   from: 17, to: 22 }
+  ];
+  const atHour = (t, h, addDays = 0) => {
+    const d = new Date(t);
+    return new Date(d.getFullYear(), d.getMonth(), d.getDate() + addDays, h).getTime();
+  };
+  const hh = (h) => `${pad(h)}:00`;
+  const clamp01 = (f) => Math.min(1, Math.max(0, f));
+  const pct = (f) => `${Math.floor(clamp01(f) * 100)}%`;
+  const fmt1 = new Intl.NumberFormat(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  function setKpi(id, f, sub, foot) {
+    $(`#${id}`).textContent = pct(f);
+    $(`#${id}Bar`).style.width = `${(clamp01(f) * 100).toFixed(2)}%`;
+    $(`#${id}Sub`).textContent = sub;
+    $(`#${id}Foot`).textContent = foot;
+  }
+
+  let lastPhasesHtml = '';
+  function renderNow(now, quit, started, n, elapsed) {
+    const q = started ? quit.getTime() : Infinity;
+    // share of each phase today that has been smoke-free so far
+    const phases = PHASES.map((ph) => {
+      const start = atHour(now, ph.from), end = atHour(now, ph.to);
+      const f = Math.max(0, Math.min(end, now) - Math.max(start, q)) / (end - start);
+      const state = now >= end ? 'done' : now >= start ? 'current' : 'upcoming';
+      return { ...ph, start, end, f, state };
+    });
+
+    if (!started) {
+      ['kPhase', 'kDay', 'k3', 'k7'].forEach((id) => setKpi(id, 0, 'Not started yet', ''));
+    } else {
+      const cur = phases.find((p) => p.state === 'current');
+      if (cur) {
+        setKpi('kPhase', cur.f, `${cur.name} · ${hh(cur.from)}–${hh(cur.to)}`, `${hm(cur.end - now)} left`);
+      } else {
+        const morning = now < atHour(now, 7) ? atHour(now, 7) : atHour(now, 7, 1);
+        setKpi('kPhase', 1, 'Night · no phase', `Morning in ${until(morning - now)}`);
+      }
+
+      const p = period(quit, n);
+      setKpi('kDay', (now - p.start) / DAY, `Day ${n} · ${hm(now - p.start)} of 24h`, `Day ${n + 1} at ${fmtTime.format(p.end)}`);
+
+      const g3 = 3 * DAY, g7 = 7 * DAY;
+      setKpi('k3', elapsed / g3, `${Math.min(72, Math.floor(elapsed / HOUR))}h of 72h`,
+        elapsed >= g3 ? `Reached ${fmtDate.format(quit.getTime() + g3)} ✓` : `${until(g3 - elapsed)} left`);
+      setKpi('k7', elapsed / g7, `${fmt1.format(Math.min(7, Math.floor(elapsed / DAY * 10) / 10))} of 7 days`,
+        elapsed >= g7 ? `Reached ${fmtDate.format(quit.getTime() + g7)} ✓` : `${until(g7 - elapsed)} left`);
+    }
+
+    let track = '', rows = '';
+    for (const ph of phases) {
+      const state = !started ? ''
+        : ph.state === 'current' ? `${hm(ph.end - now)} left`
+        : ph.state === 'upcoming' ? `in ${until(ph.start - now)}`
+        : ph.f >= 0.999 ? '✓' : ph.f === 0 ? 'before quit' : 'since quit';
+      track += `<div class="seg ${ph.state}" title="${ph.name}"><span style="width:${(ph.f * 100).toFixed(1)}%"></span></div>`;
+      rows += `<li class="${ph.state}"><span><span class="name">${ph.name}</span><span class="time">${hh(ph.from)}–${hh(ph.to)}</span></span>` +
+        `<span><span class="pct num">${pct(ph.f)}</span><span class="state">${state}</span></span></li>`;
+    }
+    const html = track + '|' + rows;
+    if (html !== lastPhasesHtml) {
+      $('#phaseTrack').innerHTML = track;
+      $('#phaseList').innerHTML = rows;
+      lastPhasesHtml = html;
+    }
+  }
+
   // ---------- main loop ----------
   function tick() {
     const now = Date.now(), quit = getQuit();
@@ -601,7 +736,8 @@
     $('#since').textContent = !valid ? 'Set your quit time in settings'
       : !started ? `starts ${fmtDate.format(quit)} · ${fmtTime.format(quit)}`
       : `smoke-free since ${fmtDate.format(quit)} · ${fmtTime.format(quit)}`;
-    $('#cravingBtn').disabled = !started;
+    document.querySelectorAll('[data-craving]').forEach((b) => { b.disabled = !started; });
+    renderNow(now, quit, started, n, elapsed);
 
     if (started) renderTotals(now, quit, elapsed, n);
     if (n !== renderedDayN) renderDays();
@@ -621,8 +757,7 @@
       b.setAttribute('aria-selected', String(on));
       b.tabIndex = on ? 0 : -1;
     });
-    $('#panel-total').hidden = name !== 'total';
-    $('#panel-days').hidden = name !== 'days';
+    document.querySelectorAll('[role="tabpanel"]').forEach((p) => { p.hidden = p.id !== `panel-${name}`; });
     try { localStorage.setItem(TAB_KEY, name); } catch (e) { /* ignore */ }
   }
   document.querySelector('.tabs').addEventListener('click', (ev) => {
@@ -631,14 +766,15 @@
   });
 
   // ---------- cravings & notes ----------
-  $('#cravingBtn').addEventListener('click', () => {
+  const onCraving = () => {
     const now = Date.now(), quit = getQuit();
     state.cravings.push(now);
     save();
     rerenderAll();
     const n = dayAt(quit, now), c = cravingsIn(period(quit, n));
     toast(c === 1 ? `Craving beaten. First one on day ${n} — nice.` : `Craving beaten. ${c} on day ${n} — keep going.`);
-  });
+  };
+  document.querySelectorAll('[data-craving]').forEach((b) => b.addEventListener('click', onCraving));
 
   let noteTimer;
   $('#days').addEventListener('click', (ev) => {
@@ -704,8 +840,11 @@
   });
 
   // ---------- start ----------
-  let initialTab = 'total';
-  try { initialTab = localStorage.getItem(TAB_KEY) === 'days' ? 'days' : 'total'; } catch (e) { /* ignore */ }
+  let initialTab = 'now';
+  try {
+    const saved = localStorage.getItem(TAB_KEY);
+    if (saved === 'total' || saved === 'days') initialTab = saved;
+  } catch (e) { /* ignore */ }
   showTab(initialTab);
   tick();
   setInterval(tick, 1000);

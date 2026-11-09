@@ -183,6 +183,24 @@
   .day-card textarea::placeholder { color: var(--muted); }
   .empty { padding: 20px; text-align: center; color: var(--muted); }
 
+  /* Achievements at stake (visible on every tab) */
+  .stake { margin-top: 12px; padding: 14px 16px 16px; }
+  .stake-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .stake-title { margin: 0; font-size: 12px; font-weight: 720; letter-spacing: 0.08em; text-transform: uppercase; color: var(--danger); }
+  .stake-count { font-size: 12px; font-weight: 620; color: var(--muted); white-space: nowrap; }
+  .stake-nums { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  .stake-nums div { min-width: 0; }
+  .stake-nums strong { display: block; font-size: 20px; line-height: 1.2; font-weight: 740; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+  .stake-nums span { display: block; font-size: 12px; color: var(--muted); }
+  .badges { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 0; padding: 0; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px 4px 8px;
+    border-radius: 99px; background: var(--accent-soft); color: var(--accent);
+    font-size: 13px; font-weight: 660; white-space: nowrap;
+  }
+  .badge svg { flex: none; }
+  .badge.locked { background: transparent; color: var(--muted); border: 1px dashed var(--muted); font-weight: 600; padding: 3px 9px 3px 7px; }
+
   /* Now view */
   .kpi .value { color: var(--accent); font-size: 30px; }
   .kpi .bar { margin: 8px 0; }
@@ -267,6 +285,20 @@
     <p class="since" id="since">&nbsp;</p>
   </section>
 
+  <section class="card stake" aria-labelledby="stakeTitle">
+    <div class="stake-head">
+      <p class="stake-title" id="stakeTitle">One cigarette would erase</p>
+      <span class="stake-count num" id="stakeCount"></span>
+    </div>
+    <div class="stake-nums">
+      <div><strong class="num" id="sTime">–</strong><span>smoke-free</span></div>
+      <div><strong class="num" id="sCigs">–</strong><span>not smoked</span></div>
+      <div><strong class="num" id="sMoney">–</strong><span>saved</span></div>
+      <div><strong class="num" id="sCravings">–</strong><span>cravings</span></div>
+    </div>
+    <ul class="badges" id="badges" aria-label="Achievements"></ul>
+  </section>
+
   <nav class="tabs" role="tablist" aria-label="View">
     <button type="button" role="tab" id="tab-now" aria-controls="panel-now" aria-selected="true" data-tab="now">Now</button>
     <button type="button" role="tab" id="tab-total" aria-controls="panel-total" aria-selected="false" data-tab="total">Total</button>
@@ -303,6 +335,20 @@
         <div class="bar"><span id="k7Bar"></span></div>
         <span class="sub" id="k7Sub"></span>
         <span class="sub" id="k7Foot"></span>
+      </div>
+      <div class="card stat kpi">
+        <span class="label">30-day goal</span>
+        <span class="value num" id="k30">–</span>
+        <div class="bar"><span id="k30Bar"></span></div>
+        <span class="sub" id="k30Sub"></span>
+        <span class="sub" id="k30Foot"></span>
+      </div>
+      <div class="card stat kpi">
+        <span class="label">90-day goal</span>
+        <span class="value num" id="k90">–</span>
+        <div class="bar"><span id="k90Bar"></span></div>
+        <span class="sub" id="k90Sub"></span>
+        <span class="sub" id="k90Foot"></span>
       </div>
     </div>
 
@@ -432,6 +478,22 @@
     { t: 10 * YEAR, title: '10 years',   text: 'Lung cancer death risk is about half that of a smoker.' },
     { t: 15 * YEAR, title: '15 years',   text: 'Heart attack risk matches someone who never smoked.' }
   ];
+  const BADGES = [
+    { t: 20 * MIN,  label: '20 min' },
+    { t: 8 * HOUR,  label: '8 hours' },
+    { t: DAY,       label: '1 day' },
+    { t: 2 * DAY,   label: '48 hours' },
+    { t: 3 * DAY,   label: '3 days' },
+    { t: 7 * DAY,   label: '1 week' },
+    { t: 14 * DAY,  label: '2 weeks' },
+    { t: 30 * DAY,  label: '30 days' },
+    { t: 60 * DAY,  label: '60 days' },
+    { t: 90 * DAY,  label: '90 days' },
+    { t: 182 * DAY, label: '6 months' },
+    { t: YEAR,      label: '1 year' }
+  ];
+  const CHECK_SM = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  const LOCK = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
   const CHECK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
 
   // ---------- helpers ----------
@@ -569,6 +631,28 @@
     }
   }
 
+  // ---------- achievements at stake ----------
+  const stakeTime = (ms) => (ms < 4 * DAY ? `${Math.floor(ms / HOUR)}h` : `${Math.floor(ms / DAY)}d`);
+  let lastBadgesHtml = '';
+  function renderStake(quit, started, elapsed) {
+    const avoided = state.cigsPerDay * elapsed / DAY;
+    $('#sTime').textContent = stakeTime(elapsed);
+    $('#sCigs').textContent = fmtInt.format(Math.floor(avoided));
+    $('#sMoney').textContent = money(avoided * state.packPrice / state.packSize);
+    $('#sCravings').textContent = fmtInt.format(started ? totalCravings(quit) : 0);
+
+    const earned = BADGES.filter((b) => elapsed >= b.t);
+    const next = BADGES.find((b) => elapsed < b.t);
+    $('#stakeCount').textContent = `${earned.length}/${BADGES.length}`;
+    $('#stakeCount').title = `${earned.length} of ${BADGES.length} achievements unlocked`;
+    let html = earned.map((b) => `<li class="badge">${CHECK_SM}${b.label}</li>`).join('');
+    if (next) html += `<li class="badge locked">${LOCK}${next.label} · in ${until(next.t - elapsed)}</li>`;
+    if (html !== lastBadgesHtml) {
+      $('#badges').innerHTML = html;
+      lastBadgesHtml = html;
+    }
+  }
+
   function renderTotals(now, quit, elapsed, n) {
     const avoided = state.cigsPerDay * elapsed / DAY;
     $('#statCigs').textContent = fmtInt.format(Math.floor(avoided));
@@ -673,6 +757,16 @@
     $(`#${id}Foot`).textContent = foot;
   }
 
+  const left = (ms) => (ms < 7 * DAY ? until(ms) : `${Math.floor(ms / DAY)}d ${Math.floor((ms % DAY) / HOUR)}h`);
+  function setGoal(id, days, elapsed, quit) {
+    const g = days * DAY;
+    const sub = days === 3
+      ? `${Math.min(72, Math.floor(elapsed / HOUR))}h of 72h`
+      : `${fmt1.format(Math.min(days, Math.floor(elapsed / DAY * 10) / 10))} of ${days} days`;
+    setKpi(id, elapsed / g, sub,
+      elapsed >= g ? `Reached ${fmtDate.format(quit.getTime() + g)} ✓` : `${left(g - elapsed)} left`);
+  }
+
   let lastPhasesHtml = '';
   function renderNow(now, quit, started, n, elapsed) {
     const q = started ? quit.getTime() : Infinity;
@@ -685,7 +779,7 @@
     });
 
     if (!started) {
-      ['kPhase', 'kDay', 'k3', 'k7'].forEach((id) => setKpi(id, 0, 'Not started yet', ''));
+      ['kPhase', 'kDay', 'k3', 'k7', 'k30', 'k90'].forEach((id) => setKpi(id, 0, 'Not started yet', ''));
     } else {
       const cur = phases.find((p) => p.state === 'current');
       if (cur) {
@@ -698,11 +792,7 @@
       const p = period(quit, n);
       setKpi('kDay', (now - p.start) / DAY, `Day ${n} · ${hm(now - p.start)} of 24h`, `Day ${n + 1} at ${fmtTime.format(p.end)}`);
 
-      const g3 = 3 * DAY, g7 = 7 * DAY;
-      setKpi('k3', elapsed / g3, `${Math.min(72, Math.floor(elapsed / HOUR))}h of 72h`,
-        elapsed >= g3 ? `Reached ${fmtDate.format(quit.getTime() + g3)} ✓` : `${until(g3 - elapsed)} left`);
-      setKpi('k7', elapsed / g7, `${fmt1.format(Math.min(7, Math.floor(elapsed / DAY * 10) / 10))} of 7 days`,
-        elapsed >= g7 ? `Reached ${fmtDate.format(quit.getTime() + g7)} ✓` : `${until(g7 - elapsed)} left`);
+      for (const days of [3, 7, 30, 90]) setGoal(`k${days}`, days, elapsed, quit);
     }
 
     let track = '', rows = '';
@@ -738,6 +828,7 @@
       : `smoke-free since ${fmtDate.format(quit)} · ${fmtTime.format(quit)}`;
     document.querySelectorAll('[data-craving]').forEach((b) => { b.disabled = !started; });
     renderNow(now, quit, started, n, elapsed);
+    renderStake(quit, started, elapsed);
 
     if (started) renderTotals(now, quit, elapsed, n);
     if (n !== renderedDayN) renderDays();
@@ -831,7 +922,15 @@
     toast('Saved');
   });
   $('#relapseBtn').addEventListener('click', () => {
-    if (!confirm('Restart your smoke-free streak from right now?')) return;
+    const now = Date.now(), quit = getQuit();
+    const elapsed = isNaN(quit) ? 0 : Math.max(0, now - quit);
+    const avoided = state.cigsPerDay * elapsed / DAY;
+    const earned = BADGES.filter((b) => elapsed >= b.t).length;
+    const msg = 'Restart your streak from right now?\n\nYou would lose:\n' +
+      `• Day ${elapsed ? dayAt(quit, now) : 0} and ${clock(elapsed)} smoke-free\n` +
+      `• ${earned} of ${BADGES.length} achievements\n` +
+      `• ${fmtInt.format(Math.floor(avoided))} cigarettes not smoked, ${money(avoided * state.packPrice / state.packSize)} saved`;
+    if (!confirm(msg)) return;
     state.quit = toLocalInput(new Date());
     save();
     dlg.close('relapse');

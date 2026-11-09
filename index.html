@@ -391,7 +391,7 @@
 
     <h2>Health milestones</h2>
     <ol class="list" id="milestones"></ol>
-    <p class="source">Typical timeline after the last cigarette, based on NHS and WHO guidance. Individual results vary.</p>
+    <p class="source">Typical timeline after the last cigarette, based on NHS, WHO and American Lung Association guidance. Individual results vary.</p>
   </section>
 
   <!-- EACH-DAY VIEW -->
@@ -466,32 +466,33 @@
   };
 
   const MIN = 6e4, HOUR = 36e5, DAY = 864e5, YEAR = 365.25 * DAY;
+  // Health benefits after the last cigarette (NHS, WHO, American Lung Association).
+  // Each one unlocks one or more achievement badges.
   const MILESTONES = [
-    { t: 20 * MIN,  title: '20 minutes', text: 'Pulse and blood pressure start returning to normal.' },
-    { t: 8 * HOUR,  title: '8 hours',    text: 'Carbon monoxide in your blood is halved; oxygen levels recover.' },
-    { t: 48 * HOUR, title: '48 hours',   text: 'Carbon monoxide is flushed out. Taste and smell start to improve.' },
-    { t: 72 * HOUR, title: '72 hours',   text: 'Breathing gets easier as your airways relax; energy goes up.' },
-    { t: 14 * DAY,  title: '2 weeks',    text: 'Circulation improves, so walking and exercise get easier.' },
-    { t: 91 * DAY,  title: '3 months',   text: 'Coughing and wheezing ease; lung function improves by up to 10%.' },
-    { t: YEAR,      title: '1 year',     text: 'Heart attack risk is about half that of a smoker.' },
-    { t: 5 * YEAR,  title: '5 years',    text: 'Stroke risk can fall to that of a non-smoker.' },
-    { t: 10 * YEAR, title: '10 years',   text: 'Lung cancer death risk is about half that of a smoker.' },
-    { t: 15 * YEAR, title: '15 years',   text: 'Heart attack risk matches someone who never smoked.' }
+    { t: 20 * MIN,  title: '20 minutes', badges: ['Pulse normalizing'],
+      text: 'Pulse and blood pressure start returning to normal.' },
+    { t: 8 * HOUR,  title: '8 hours',    badges: ['Oxygen recovering'],
+      text: 'Carbon monoxide in your blood is halved; oxygen levels recover.' },
+    { t: 48 * HOUR, title: '48 hours',   badges: ['Carbon monoxide gone', 'Lungs start to heal', 'Taste & smell return'],
+      text: 'Carbon monoxide is flushed out, your lungs start clearing out mucus, and taste and smell improve.' },
+    { t: 72 * HOUR, title: '72 hours',   badges: ['Breathing easier', 'More energy'],
+      text: 'Bronchial tubes relax, so breathing gets easier; energy goes up.' },
+    { t: 14 * DAY,  title: '2 weeks',    badges: ['Better circulation'],
+      text: 'Circulation improves, so walking and exercise get easier.' },
+    { t: 30 * DAY,  title: '1 month',    badges: ['Lungs self-cleaning', 'Less coughing'],
+      text: 'Cilia — the tiny hairs that sweep your lungs clean — start working again (1–9 months); coughing and shortness of breath decrease.' },
+    { t: 91 * DAY,  title: '3 months',   badges: ['Lung function +10%'],
+      text: 'Lung function improves by up to 10%; wheezing and breathing problems ease (3–9 months).' },
+    { t: YEAR,      title: '1 year',     badges: ['Heart attack risk halved'],
+      text: 'Heart attack risk is about half that of a smoker.' },
+    { t: 5 * YEAR,  title: '5 years',    badges: ['Stroke risk down'],
+      text: 'Stroke risk can fall to that of a non-smoker (5–15 years).' },
+    { t: 10 * YEAR, title: '10 years',   badges: ['Lung cancer risk halved'],
+      text: 'Lung cancer death risk is about half that of a smoker.' },
+    { t: 15 * YEAR, title: '15 years',   badges: ['Heart of a non-smoker'],
+      text: 'Heart attack risk matches someone who never smoked.' }
   ];
-  const BADGES = [
-    { t: 20 * MIN,  label: '20 min' },
-    { t: 8 * HOUR,  label: '8 hours' },
-    { t: DAY,       label: '1 day' },
-    { t: 2 * DAY,   label: '48 hours' },
-    { t: 3 * DAY,   label: '3 days' },
-    { t: 7 * DAY,   label: '1 week' },
-    { t: 14 * DAY,  label: '2 weeks' },
-    { t: 30 * DAY,  label: '30 days' },
-    { t: 60 * DAY,  label: '60 days' },
-    { t: 90 * DAY,  label: '90 days' },
-    { t: 182 * DAY, label: '6 months' },
-    { t: YEAR,      label: '1 year' }
-  ];
+  const BADGES = MILESTONES.flatMap((m) => m.badges.map((label) => ({ t: m.t, label, text: m.text })));
   const CHECK_SM = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
   const LOCK = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
   const CHECK = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
@@ -643,10 +644,11 @@
 
     const earned = BADGES.filter((b) => elapsed >= b.t);
     const next = BADGES.find((b) => elapsed < b.t);
+    const locked = next ? BADGES.filter((b) => b.t === next.t) : [];
     $('#stakeCount').textContent = `${earned.length}/${BADGES.length}`;
-    $('#stakeCount').title = `${earned.length} of ${BADGES.length} achievements unlocked`;
-    let html = earned.map((b) => `<li class="badge">${CHECK_SM}${b.label}</li>`).join('');
-    if (next) html += `<li class="badge locked">${LOCK}${next.label} · in ${until(next.t - elapsed)}</li>`;
+    $('#stakeCount').title = `${earned.length} of ${BADGES.length} health benefits unlocked`;
+    let html = earned.map((b) => `<li class="badge" title="${esc(b.text)}">${CHECK_SM}${b.label}</li>`).join('');
+    html += locked.map((b) => `<li class="badge locked" title="${esc(b.text)}">${LOCK}${b.label} · ${until(b.t - elapsed)}</li>`).join('');
     if (html !== lastBadgesHtml) {
       $('#badges').innerHTML = html;
       lastBadgesHtml = html;
@@ -925,10 +927,10 @@
     const now = Date.now(), quit = getQuit();
     const elapsed = isNaN(quit) ? 0 : Math.max(0, now - quit);
     const avoided = state.cigsPerDay * elapsed / DAY;
-    const earned = BADGES.filter((b) => elapsed >= b.t).length;
+    const earned = BADGES.filter((b) => elapsed >= b.t);
     const msg = 'Restart your streak from right now?\n\nYou would lose:\n' +
       `• Day ${elapsed ? dayAt(quit, now) : 0} and ${clock(elapsed)} smoke-free\n` +
-      `• ${earned} of ${BADGES.length} achievements\n` +
+      (earned.length ? `• ${earned.length} health benefits: ${earned.map((b) => b.label).join(', ')}\n` : '') +
       `• ${fmtInt.format(Math.floor(avoided))} cigarettes not smoked, ${money(avoided * state.packPrice / state.packSize)} saved`;
     if (!confirm(msg)) return;
     state.quit = toLocalInput(new Date());
